@@ -40,11 +40,14 @@ import java.io.IOException;
 import java.io.Reader;
 import java.io.Writer;
 import java.lang.reflect.Field;
+import java.lang.reflect.Modifier;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.Stack;
 import java.util.TreeSet;
 
 /**
@@ -75,6 +78,11 @@ public class MetricsFile<BEAN extends MetricBase, HKEY extends Comparable> {
 
     /** Adds a bean to the collection of metrics. */
     public void addMetric(final BEAN bean) { this.metrics.add(bean); }
+
+    /** Add multiple metric beans at once. */
+    public void addAllMetrics(final Iterable<BEAN> beanz) {
+        for (final BEAN bean : beanz) { this.addMetric(bean); }
+    }
 
     /** Returns the list of headers. */
     public List<BEAN> getMetrics() { return Collections.unmodifiableList(this.metrics); }
@@ -197,10 +205,28 @@ public class MetricsFile<BEAN extends MetricBase, HKEY extends Comparable> {
         out.append(METRIC_HEADER + getBeanType().getName());
         out.newLine();
 
-        // Write out the column headers
-        final Field[] fields = getBeanType().getFields();
+        /** Get the public fields for this bean, ordering them as follows:
+         * (1) If a metric class extends another metric class, print the fields of the superclass first.
+         * (2) Beyond that, honor the order of Class.getDeclaredFields(), which may be JVM-specific.
+         *     For Oracle, the order of declaration is used.
+         */
+        final Stack<Field> fieldStack = new Stack<Field>();
+        Class currentClass = getBeanType();
+        while (currentClass != null) {
+            final Field[] currentFields = currentClass.getDeclaredFields();
+            for (int i = currentFields.length - 1; i >= 0; --i) {
+                if (Modifier.isPublic(currentFields[i].getModifiers())) {
+                    fieldStack.push(currentFields[i]);
+                }
+            }
+            currentClass = currentClass.getSuperclass();
+        }
+
+        final Field[] fields = new Field[fieldStack.size()];
+        for (int i = 0; !fieldStack.empty(); ++i) fields[i] = fieldStack.pop();
         final int fieldCount = fields.length;
 
+        // Write out the column headers
         for (int i=0; i<fieldCount; ++i) {
             out.append(fields[i].getName());
             if (i < fieldCount - 1) {
@@ -544,5 +570,34 @@ public class MetricsFile<BEAN extends MetricBase, HKEY extends Comparable> {
         } catch (FileNotFoundException e) {
             throw new SAMException(e.getMessage(), e);
         }
+    }
+
+    /**
+     * Method to read the header from a metrics file.
+     */
+    public static List<Header> readHeaders(final File file) {
+        try {
+            final MetricsFile<MetricBase, Comparable<?>> metricsFile = new MetricsFile<MetricBase, Comparable<?>>();
+            metricsFile.read(new FileReader(file));
+            return metricsFile.getHeaders();
+        } catch (FileNotFoundException e) {
+            throw new SAMException(e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Compare the metrics in two files, ignoring headers and histograms.
+     */
+    public static boolean areMetricsEqual(final File file1, final File file2) {
+        try {
+            final MetricsFile<MetricBase, Comparable<?>> mf1 = new MetricsFile<MetricBase, Comparable<?>>();
+            final MetricsFile<MetricBase, Comparable<?>> mf2 = new MetricsFile<MetricBase, Comparable<?>>();
+            mf1.read(new FileReader(file1));
+            mf2.read(new FileReader(file2));
+            return mf1.areMetricsEqual(mf2);
+        } catch (FileNotFoundException e) {
+            throw new SAMException(e.getMessage(), e);
+        }
+
     }
 }
