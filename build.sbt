@@ -8,19 +8,11 @@ scalaVersion := "2.11.4"
 
 organization := "com.github.samtools"
 
-libraryDependencies += "org.apache.commons" % "commons-jexl" % "2.1.1"
-
-libraryDependencies += "commons-logging" % "commons-logging" % "1.2"
-
-libraryDependencies += "org.xerial.snappy" % "snappy-java" % "1.1.1.3"
-
 libraryDependencies += "org.testng" % "testng" % "6.8.8" % Test
 
 javaSource in Compile := baseDirectory.value / "src/java"
 
 javaSource in Test := baseDirectory.value / "src/tests"
-
-assemblySettings
 
 testNGSettings
 
@@ -31,7 +23,7 @@ publishTo := {
   if (isSnapshot.value)
     Some("snapshots" at nexus + "content/repositories/snapshots")
   else
-    Some("releases"  at nexus + "service/local/staging/deploy/maven2")
+    Some("releases" at nexus + "service/local/staging/deploy/maven2")
 }
 
 autoScalaLibrary := false
@@ -40,18 +32,21 @@ publishMavenStyle := true
 
 publishArtifact in Test := false
 
-pomIncludeRepository := { _ => false }
+pomIncludeRepository := { _ => false}
 
 artifactName := { (sv: ScalaVersion, module: ModuleID, artifact: Artifact) =>
-  val classifierStr = artifact.classifier match { case None => ""; case Some(c) => "-" + c }
+  val classifierStr = artifact.classifier match {
+    case None => "";
+    case Some(c) => "-" + c
+  }
   artifact.name + "-" + module.revision + classifierStr + "." + artifact.extension
 }
 
 crossPaths := false
 
 javacOptions in Compile ++= Seq("-source", "1.6")
- 
-javacOptions in (Compile, compile) ++= Seq("-target", "1.6")
+
+javacOptions in(Compile, compile) ++= Seq("-target", "1.6")
 
 pomExtra := <url>http://samtools.github.io/htsjdk/</url>
   <licenses>
@@ -72,3 +67,33 @@ pomExtra := <url>http://samtools.github.io/htsjdk/</url>
       <url>http://broadinstitute.github.io/picard/</url>
     </developer>
   </developers>
+
+assemblyJarName := s"${name.value}-${version.value}.jar"
+
+assemblyMergeStrategy in assembly := {
+  case x if Assembly.isConfigFile(x) =>
+    MergeStrategy.concat
+  case PathList(ps@_*) if (Assembly.isReadme(ps.last) || Assembly.isLicenseFile(ps.last)) =>
+    MergeStrategy.rename
+  case PathList("META-INF", xs@_*) =>
+    xs map {
+      _.toLowerCase
+    } match {
+      case ("manifest.mf" :: Nil) | ("index.list" :: Nil) | ("dependencies" :: Nil) =>
+        MergeStrategy.discard
+      case ps@(x :: xs) if ps.last.endsWith(".sf") || ps.last.endsWith(".dsa") =>
+        MergeStrategy.discard
+      case "plexus" :: xs =>
+        MergeStrategy.discard
+      case "spring.tooling" :: xs =>
+        MergeStrategy.discard
+      case "services" :: xs =>
+        MergeStrategy.filterDistinctLines
+      case ("spring.schemas" :: Nil) | ("spring.handlers" :: Nil) =>
+        MergeStrategy.filterDistinctLines
+      case _ => MergeStrategy.deduplicate
+    }
+  case "asm-license.txt" | "overview.html" =>
+    MergeStrategy.discard
+  case _ => MergeStrategy.deduplicate
+}
